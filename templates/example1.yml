@@ -1,0 +1,30 @@
+description: >
+  A trivial example of a Heat template. All it does is launch an instance.
+
+  Assumptions about what already exists on the infrastructure:
+    * image: "ubuntu16-latest"
+    * flavor: "small"
+    * keypair: "default" (just as a default, it's replaceable though)
+
+heat_template_version: 2015-04-30
+
+resources:
+  my_instance:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: key_name }
+      image: ubuntu16-latest
+      flavor: small
+
+parameters:
+  key_name:
+    type: string
+    description: Name of a KeyPair to enable SSH access to the instance
+    default: default
+    constraints:
+    - custom_constraint: nova.keypair
+
+outputs:
+  my_instance_name:
+    description: Instance Name
+    value: { get_attr: [my_instance, name] }

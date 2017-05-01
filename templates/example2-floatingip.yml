@@ -1,0 +1,46 @@
+description: >
+  A less-trivial example of a Heat template. Launches an instance and binds
+  a floating IP to it.
+
+  Assumptions about what already exists on the infrastructure:
+    * image: "ubuntu16-latest"
+    * security group: "remote SSH"
+    * flavor: "small" (AWS might call this "t2.small")
+    * pool: "ext-net" (common name for external IPs)
+    * keypair: "default" (default, it's replaceable)
+
+heat_template_version: 2015-04-30
+
+resources:
+  my_instance:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: key_name }
+      image: ubuntu16-latest
+      flavor: small
+      security_groups:
+      - "remote SSH"
+
+  my_floatingip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: ext-net
+
+  my_floatingip_association:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: my_floatingip }
+      server_id: { get_resource: my_instance }
+
+parameters:
+  key_name:
+    type: string
+    description: Name of a KeyPair to enable SSH access to the instance
+    default: default
+    constraints:
+    - custom_constraint: nova.keypair
+
+outputs:
+  my_instance_ip:
+    description: Public IP address of the server
+    value: { get_attr: [my_floatingip, ip] }
