@@ -1,6 +1,6 @@
 # This describes what is deployed by this template.
 description: >
-  Hadoop clusters deployed with Heat on Roger
+  Geoserver deployed with Heat on Roger
 
   Assumptions about what exists:
     * flavor: "small" (option)
