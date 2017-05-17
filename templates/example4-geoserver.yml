@@ -1,0 +1,129 @@
+# This describes what is deployed by this template.
+description: >
+  Hadoop clusters deployed with Heat on Roger
+
+  Assumptions about what exists:
+    * flavor: "small" (option)
+    * keypair: "default" (option)
+    * network: "sharednet1" (option)
+
+# This defines the minimum Heat version required by this template.
+# heat_template_version: 2015-10-15
+heat_template_version: 2015-04-30
+
+# The resources section defines what OpenStack resources are to be deployed and
+# how they should be configured.
+resources:
+  geoserver_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: ext-net
+
+  geoserver_sg:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Security group allowing anyone to access 8080
+      name:
+        str_replace:
+          template: sg_$stack_name
+          params:
+            $stack_name: { get_param: "OS::stack_name" }
+      rules:
+      - remote_ip_prefix: 0.0.0.0/0
+        protocol: tcp
+        port_range_min: 8080
+        port_range_max: 8080
+
+  geoserver:
+    type: OS::Nova::Server
+    depends_on: [ geoserver_sg, geoserver_ip ]
+    properties:
+      name: geoserver
+      flavor: { get_param: flavor_name }
+      image: ubuntu16-latest
+      key_name: { get_param: key_name }
+      networks:
+         - network: { get_param: network_name }
+      security_groups:
+        - "remote SSH"
+        - str_replace:
+            template: sg_$stack_name
+            params:
+              $stack_name: { get_param: "OS::stack_name" }
+      user_data_format: RAW
+      user_data: |
+        #!/bin/bash
+        set -ex
+        adduser --gecos "" --disabled-password geoserver
+
+        curl -O http://ares.boundlessgeo.com/geoserver/2.11.x/geoserver-2.11.x-latest-bin.zip
+        apt-get update
+        apt-get install -y unzip default-jre
+        unzip geoserver-2.11.x-latest-bin.zip -d /home/geoserver
+        mv /home/geoserver/geoserver* /home/geoserver/geoserver
+        mkdir /home/geoserver/data_dir
+        chown -R geoserver:geoserver /home/geoserver
+
+        cat > /etc/default/geoserver <<- EOM
+        USER=geoserver
+        GEOSERVER_DATA_DIR=/home/$USER/data_dir
+        GEOSERVER_HOME=/home/$USER/geoserver
+        JAVA_HOME=/usr
+        JAVA_OPTS="-Xms128m -Xmx512m"
+        EOM
+
+        # systemd service
+        cat > /opt/geoserver.service <<- EOM
+        [Unit]
+        Description=GeoServer
+        After=network.target
+
+        [Service]
+        User=geoserver
+        Environment=JAVA_HOME=/usr
+        Environment=GEOSERVER_HOME=/home/geoserver/geoserver
+        ExecStart=/home/geoserver/geoserver/bin/startup.sh
+        ExecStop=/home/geoserver/geoserver/bin/shutdown.sh
+
+        [Install]
+        WantedBy=multi-user.target
+        EOM
+
+        systemctl enable /opt/geoserver.service
+        systemctl start geoserver.service
+
+  geoserver_association:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      server_id: { get_resource: geoserver }
+      floating_ip: { get_resource: geoserver_ip }
+
+# The parameters section gathers configuration from the user.
+parameters:
+  key_name:
+    type: string
+    description: Name of a KeyPair to enable SSH access to instances
+    default: default
+    constraints:
+    - custom_constraint: nova.keypair
+  flavor_name:
+    type: string
+    description: Name of the flavor used for the instances.
+    default: small
+    constraints:
+    - custom_constraint: nova.flavor
+  network_name:
+    type: string
+    description: Name of the network used for the instances.
+    default: sharednet1
+    constraints:
+    - custom_constraint: neutron.network
+
+outputs:
+  public_ip:
+    description: Contact address
+    value:
+      str_replace:
+        template: http://$stack_ip:8080/geoserver/
+        params:
+          $stack_ip: { get_attr: [geoserver_ip, ip] }
